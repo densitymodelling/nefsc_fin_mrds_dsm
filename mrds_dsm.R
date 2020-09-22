@@ -1,0 +1,134 @@
+# Using double observer methods with density surface models
+# based on code from Doug Sigourney https://peerj.com/articles/8226/
+# data provided by Doug Sigourney, NOAA NEFSC.
+
+library(mrds)
+#library(dsm)
+devtools::load_all("~/current/dsm")
+library(Distance)
+
+# Load data files
+# Sightings data formatted for mrds
+mrds_Sightings <- read.csv("Fin_Sightings_mrds_for_dsm.csv")
+Fin_Whale_Data <- read.csv("Final_Fin_Whale_Data_for_dsm.csv")
+
+# data formatting for DSM
+mrds_Sightings$distance <- mrds_Sightings$distance/1000
+mrds_Sightings$Sample.Label <- mrds_Sightings$segment
+Fin_Whale_Data$Sample.Label <- Fin_Whale_Data$segment
+Fin_Whale_Data$ddfobj <- Fin_Whale_Data$Survey
+
+# is this right?
+Fin_Whale_Data$SUBJ_WAVG <- Fin_Whale_Data$Subjective
+Fin_Whale_Data$beaufort <- Fin_Whale_Data$Beaufort
+
+# species identifier: 1=Fin, 2=fin/sei, 3=sei
+Final_Cov_Mat_Fin <- subset(Fin_Whale_Data, Species_Hab_Num==1)
+
+# Truncation Distances (1=Shipboard, 2=Aerial...here and throughout)
+W_1 <- 6
+W_2 <- 0.9
+
+# shipboard survey data
+All_Dat_Ship <- subset(mrds_Sightings, survey==1 & distance>-1 & distance < W_1)
+
+# aerial survey data
+All_Dat_Plane <- subset(mrds_Sightings, survey==2 & distance>-1 & distance < W_2)
+# all sightings from the front team
+All_Dat_Plane_1 <- subset(All_Dat_Plane, observer==1 & detected==1)
+
+
+# ship surveys - MRDS
+Ship.mrds <- ddf(dsmodel = ~mcds(key = "hr", formula = ~beaufort + SUBJ_WAVG),
+                 mrmodel = ~glm(~distance),
+                 data = All_Dat_Ship, method = "io",
+                 meta.data = list(width = W_1))
+summary(Ship.mrds)
+
+# aerial surveys - MCDS
+Plane.ds <- ddf(dsmodel = ~mcds(key = "hr", formula = ~beaufort),
+                data = All_Dat_Plane_1, meta.data = list(width = W_2))
+summary(Plane.ds)
+
+obs <- rbind(All_Dat_Ship, All_Dat_Plane_1)
+
+
+# Fit DSM
+
+#Fit top Model using mgcv with effort offset (phat is detetcability (including surafce availanility for aerial surveys) and Area.S
+ #is the area suerached in each grid cell (2WL))
+
+#Best.Model <- gam(NSights ~  s(DIST125,bs="ts", k=5)+ s(DEPTH,bs="ts", k=5)+ s(DIST2SHORE,bs="ts", k=5)+ s(SST,bs="ts", k=5),  family=tw(link="log"),
+#  method="REML", offset=log(phat*Area.S), data=Final_Cov_Mat_Fin)
+
+devtools::load_all("~/current/dsm")
+Best.Model <- dsm(count ~ s(DIST125,bs="ts", k=5) +
+                          s(DEPTH,bs="ts", k=5) +
+                          s(DIST2SHORE,bs="ts", k=5) +
+                          s(SST,bs="ts", k=5),
+                  ddf.obj=list(Ship.mrds, Plane.ds),
+                  family=tw(link="log"), method="REML",
+                  segment.data=Final_Cov_Mat_Fin, group=TRUE,
+                  observation.data=obs)
+
+obs_exp(Best.Model, "beaufort", c(0, 1,2,3,4,5))
+
+
+
+# Make predictions
+
+#Import data set with values for all grid cells
+All_Covs <- read.csv("Mean_Summer_Covariates_By_Grid_Cell_Final.csv")
+
+All_Covs <- subset(All_Covs, DIST125!='NA' & DEPTH!='NA'& DIST2SHORE!='NA'& SST!='NA')
+ 
+pred_mat <- All_Covs[,c("grid","Area","DIST125","DEPTH","DIST2SHORE","SST")]
+
+
+#Make predictions using predict function
+predict.fun <- predict(Best.Model, newdata=pred_mat, off.set=pred_mat$Area)
+
+# without correction
+sum(predict.fun*1.38)
+
+# mutiply each prediction by estimate of average group size
+sum(predict.fun*1.38)
+
+
+# using observed rather than estimated group sizes
+group.model <- dsm(count ~ s(DIST125,bs="ts", k=5) +
+                           s(DEPTH,bs="ts", k=5) +
+                           s(DIST2SHORE,bs="ts", k=5) +
+                           s(SST,bs="ts", k=5),
+                   ddf.obj=list(Ship.mrds, Plane.ds),
+                   family=tw(link="log"), method="REML",
+                   segment.data=Final_Cov_Mat_Fin,
+                   observation.data=obs)
+# better?
+sum(predict(group.model, newdata=pred_mat, off.set=pred_mat$Area))
+
+
+#vp <- dsm_varprop(group.model, pred_mat)
+
+##Use delta method approach decsribed in Miller et al. (2013) to compute SE of N-hat
+#
+## Extract Lp matrix
+#Lp <- predict(Best.Model, newdata=pred_mat, type="lpmatrix")
+#
+##Make predictions on the link scale
+#pred <- Lp %*% coef(Best.Model)
+#linkinvfn <- Best.Model$family$linkinv
+#pred <- linkinvfn(pred)*Area*1.38 #Back tranform and multpily by average group size
+#
+##get variance-covariance matrix
+#vc <- Best.Model$Vp
+#
+##Apply delta Method
+#dNdbeta <- t(pred)%*%Lp
+#var_p <- dNdbeta %*% vc %*% t(dNdbeta)
+#
+##Calculate CV
+#Pop_est<-Nhat
+#Pop_sd<- var_p^0.5
+#Pop_cv<-Pop_sd/Pop_est
+
