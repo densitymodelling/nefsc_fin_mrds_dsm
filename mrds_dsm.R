@@ -3,8 +3,8 @@
 # data provided by Doug Sigourney, NOAA NEFSC.
 
 library(mrds)
-#library(dsm)
-devtools::load_all("~/current/dsm")
+# need at least dsm version 2.3.1.9007 from github!
+library(dsm)
 library(Distance)
 
 # Load data files
@@ -25,6 +25,7 @@ Fin_Whale_Data$beaufort <- Fin_Whale_Data$Beaufort
 # species identifier: 1=Fin, 2=fin/sei, 3=sei
 Final_Cov_Mat_Fin <- subset(Fin_Whale_Data, Species_Hab_Num==1)
 
+
 # Truncation Distances (1=Shipboard, 2=Aerial...here and throughout)
 W_1 <- 6
 W_2 <- 0.9
@@ -37,6 +38,10 @@ All_Dat_Plane <- subset(mrds_Sightings, survey==2 & distance>-1 & distance < W_2
 # all sightings from the front team
 All_Dat_Plane_1 <- subset(All_Dat_Plane, observer==1 & detected==1)
 
+# build observation data.frame
+obs <- rbind(All_Dat_Ship, All_Dat_Plane_1)
+
+## model fitting
 
 # ship surveys - MRDS
 Ship.mrds <- ddf(dsmodel = ~mcds(key = "hr", formula = ~beaufort + SUBJ_WAVG),
@@ -50,18 +55,11 @@ Plane.ds <- ddf(dsmodel = ~mcds(key = "hr", formula = ~beaufort),
                 data = All_Dat_Plane_1, meta.data = list(width = W_2))
 summary(Plane.ds)
 
-obs <- rbind(All_Dat_Ship, All_Dat_Plane_1)
 
 
 # Fit DSM
-
-#Fit top Model using mgcv with effort offset (phat is detetcability (including surafce availanility for aerial surveys) and Area.S
- #is the area suerached in each grid cell (2WL))
-
-#Best.Model <- gam(NSights ~  s(DIST125,bs="ts", k=5)+ s(DEPTH,bs="ts", k=5)+ s(DIST2SHORE,bs="ts", k=5)+ s(SST,bs="ts", k=5),  family=tw(link="log"),
-#  method="REML", offset=log(phat*Area.S), data=Final_Cov_Mat_Fin)
-
-devtools::load_all("~/current/dsm")
+# this is as in Sigourney et al, setting group sizes to be 1
+# then inflating with average group size later
 Best.Model <- dsm(count ~ s(DIST125,bs="ts", k=5) +
                           s(DEPTH,bs="ts", k=5) +
                           s(DIST2SHORE,bs="ts", k=5) +
@@ -71,31 +69,32 @@ Best.Model <- dsm(count ~ s(DIST125,bs="ts", k=5) +
                   segment.data=Final_Cov_Mat_Fin, group=TRUE,
                   observation.data=obs)
 
-obs_exp(Best.Model, "beaufort", c(0, 1,2,3,4,5))
+obs_exp(Best.Model, "beaufort", c(0, 1, 2, 3, 4, 5))
 
 
 
 # Make predictions
 
-#Import data set with values for all grid cells
+# Import data set with values for all grid cells
 All_Covs <- read.csv("Mean_Summer_Covariates_By_Grid_Cell_Final.csv")
-
-All_Covs <- subset(All_Covs, DIST125!='NA' & DEPTH!='NA'& DIST2SHORE!='NA'& SST!='NA')
- 
-pred_mat <- All_Covs[,c("grid","Area","DIST125","DEPTH","DIST2SHORE","SST")]
+All_Covs <- subset(All_Covs, DIST125!='NA' & DEPTH!='NA'
+                   & DIST2SHORE!='NA' & SST!='NA')
+pred_mat <- All_Covs[, c("grid", "Area", "DIST125", "DEPTH",
+                         "DIST2SHORE", "SST")]
+pred_mat$off.set <- pred_mat$Area
 
 
 #Make predictions using predict function
 predict.fun <- predict(Best.Model, newdata=pred_mat, off.set=pred_mat$Area)
 
 # without correction
-sum(predict.fun*1.38)
+sum(predict.fun)
 
 # mutiply each prediction by estimate of average group size
 sum(predict.fun*1.38)
 
 
-# using observed rather than estimated group sizes
+# same model but using observed rather than estimated group sizes
 group.model <- dsm(count ~ s(DIST125,bs="ts", k=5) +
                            s(DEPTH,bs="ts", k=5) +
                            s(DIST2SHORE,bs="ts", k=5) +
@@ -104,31 +103,12 @@ group.model <- dsm(count ~ s(DIST125,bs="ts", k=5) +
                    family=tw(link="log"), method="REML",
                    segment.data=Final_Cov_Mat_Fin,
                    observation.data=obs)
+
+obs_exp(group.model, "beaufort", c(0, 1, 2, 3, 4, 5))
 # better?
 sum(predict(group.model, newdata=pred_mat, off.set=pred_mat$Area))
 
-
-#vp <- dsm_varprop(group.model, pred_mat)
-
-##Use delta method approach decsribed in Miller et al. (2013) to compute SE of N-hat
-#
-## Extract Lp matrix
-#Lp <- predict(Best.Model, newdata=pred_mat, type="lpmatrix")
-#
-##Make predictions on the link scale
-#pred <- Lp %*% coef(Best.Model)
-#linkinvfn <- Best.Model$family$linkinv
-#pred <- linkinvfn(pred)*Area*1.38 #Back tranform and multpily by average group size
-#
-##get variance-covariance matrix
-#vc <- Best.Model$Vp
-#
-##Apply delta Method
-#dNdbeta <- t(pred)%*%Lp
-#var_p <- dNdbeta %*% vc %*% t(dNdbeta)
-#
-##Calculate CV
-#Pop_est<-Nhat
-#Pop_sd<- var_p^0.5
-#Pop_cv<-Pop_sd/Pop_est
+# propagate uncertainty
+vp <- dsm_varprop(group.model, pred_mat)
+vp
 
