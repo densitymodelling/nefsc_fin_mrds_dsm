@@ -381,7 +381,28 @@ summary {
 </div>
 
 
-<p>data provided by Doug Sigourney, NOAA NEFSC. based on data from the paper at <a href="https://peerj.com/articles/8226/" class="uri">https://peerj.com/articles/8226/</a></p>
+<div id="introduction" class="section level1">
+<h1>Introduction</h1>
+<p>These data consist of observations of fin whales as part of NOAA’s <a href="https://www.fisheries.noaa.gov/new-england-mid-atlantic/population-assessments/atlantic-marine-assessment-program-protected">Atlantic Marine Assessment Program for Protected Species</a>.</p>
+<p>The analysis here is based on that in <em>Developing and assessing a density surface model in a Bayesian hierarchical framework with a focus on uncertainty: insights from simulations and an application to fin whales (Balaenoptera physalus)</em> <a href="https://peerj.com/articles/8226/">available at PeerJ</a>.</p>
+</div>
+<div id="elements-of-this-analysis" class="section level1">
+<h1>Elements of this analysis</h1>
+<ul>
+<li>2 detection functions
+<ul>
+<li>Aerial survey: multiple covariate distance sampling (MCDS)</li>
+<li>Shipboard survey: double observer survey (mark-recapture distance sampling; MRDS)</li>
+</ul></li>
+<li>Availability correction for aerial surveys (0.37)</li>
+<li>Density surface model combining these two sources</li>
+<li>Comparison of using average group size vs. observed group size</li>
+</ul>
+<p>Note that in the original analysis of these data a fully Bayesian model was used, incorporating uncertainty in group size and availability. Here we do not address these sources of uncertainty. The most appropriate comparison is to results provided in their <a href="https://peerj.com/articles/8226/#table-3">Table 3</a> where availability was treated as constant (since uncertainty in mean group size contributed a negligible amount to uncertainty). This estimate is 4345 fin whales with a CV=0.21.</p>
+</div>
+<div id="preliminaries" class="section level1">
+<h1>Preliminaries</h1>
+<p>Data has already been processed and is stored in <code>findata.RData</code>.</p>
 <pre class="r"><code>library(mrds)</code></pre>
 <pre><code>## This is mrds 2.2.3
 ## Built: R 4.0.2; ; 2020-08-01 10:33:56 UTC; unix</code></pre>
@@ -393,19 +414,22 @@ summary {
 <pre><code>## This is dsm 2.3.1.9007
 ## Built: R 4.0.2; ; 2020-10-01 05:44:34 UTC; unix</code></pre>
 <pre class="r"><code>load(&quot;findata.RData&quot;)</code></pre>
-<div id="availability" class="section level2">
-<h2>Availability</h2>
+<p>Note that <code>dsm</code> package version 2.3.1.9007 (development version from <a href="https://github.com/distancedevelopment/dsm">github</a>) is required for multiple detection function functionality.</p>
+<div id="model-fitting" class="section level2">
+<h2>Model fitting</h2>
+<p>We now fit the detection functions, followed by the density surface model. Note that we’d normally do full model selection at each stage, but since we are simply duplicating the analysis from the paper we just use the models selected there.</p>
+<p>Note that the data used to fit the detection functions (<code>ship_detections</code> and <code>plane_detections</code>) includes detections of fin whales, sei whales and detections that could only be classified to “fin or sei whale”. This improves the fit of the detection functions as more detections are included. For fitting the density surface model, we only want to include detections of fin whales (since that is the species we want an abundance estimate for). We can exclude the non-fin whale observations by including only the <code>object</code> IDs that we want in the observation frame <code>fin_obs</code>. See the data setup script for how this was done.</p>
+<p>We first setup the truncations for each detection function model:</p>
+<pre class="r"><code>w_ship &lt;- 6
+w_plane &lt;- 0.9</code></pre>
+<p>and then need to set up a vector of availabilities for the DSM. This just needs to be the same length as the observation data.</p>
 <pre class="r"><code>a_plane &lt;- 0.37
 a_ship &lt;- 1
 
 avail &lt;- c(a_ship, a_plane)[fin_obs$survey]</code></pre>
-<pre class="r"><code>w_ship &lt;- 6
-w_plane &lt;- 0.9</code></pre>
-</div>
-<div id="model-fitting" class="section level2">
-<h2>Model fitting</h2>
 <div id="ship-surveys---mrds" class="section level3">
 <h3>Ship surveys - MRDS</h3>
+<p>We can fit an independent observer model to the double observer data for the ship.</p>
 <pre class="r"><code>Ship_mrds &lt;- ddf(dsmodel = ~mcds(key = &quot;hr&quot;, formula = ~beaufort + SUBJ_WAVG),
                  mrmodel = ~glm(~distance),
                  data = ship_detections, method = &quot;io&quot;,
@@ -463,6 +487,7 @@ summary(Ship_mrds)</code></pre>
 </div>
 <div id="aerial-surveys---mcds" class="section level3">
 <h3>Aerial surveys - MCDS</h3>
+<p>The aerial survey is a regular multiple covariate detection function:</p>
 <pre class="r"><code>Plane_ds &lt;- ddf(dsmodel = ~mcds(key = &quot;hr&quot;, formula = ~beaufort),
                 data = plane_detections, meta.data = list(width = w_plane))
 summary(Plane_ds)</code></pre>
@@ -491,16 +516,18 @@ summary(Plane_ds)</code></pre>
 </div>
 <div id="density-surface-model" class="section level3">
 <h3>Density surface model</h3>
-<p>this is as in Sigourney et al, setting group sizes to be 1 then inflating with average group size later</p>
-<pre class="r"><code>dsm_avg_group &lt;- dsm(count ~ s(DIST125,bs=&quot;ts&quot;, k=5) +
-                             s(DEPTH,bs=&quot;ts&quot;, k=5) +
-                             s(DIST2SHORE,bs=&quot;ts&quot;, k=5) +
-                             s(SST,bs=&quot;ts&quot;, k=5),
+<p>In Sigourney et al. (2020) group sizes were to be 1 for fitting. Predictions were then inflated by multiplying by the average group size (1.38), as is often done with large whales with small groups sizes with little variation. We specify this by setting <code>group=TRUE</code>.</p>
+<p>We can then fit the model using the below code. Note a list of detection function objects is provided to <code>ddf.obj</code>, their ordering matters and corresponds to the <code>ddfobj</code> column in the segment data (<code>fin_segs</code>).</p>
+<pre class="r"><code>dsm_avg_group &lt;- dsm(count ~ s(DIST125, bs=&quot;ts&quot;, k=5) +
+                             s(DEPTH, bs=&quot;ts&quot;, k=5) +
+                             s(DIST2SHORE, bs=&quot;ts&quot;, k=5) +
+                             s(SST, bs=&quot;ts&quot;, k=5),
                      ddf.obj=list(Ship_mrds, Plane_ds),
                      family=tw(link=&quot;log&quot;), method=&quot;REML&quot;,
                      segment.data=fin_segs, group=TRUE,
                      availability=avail,
                      observation.data=fin_obs)</code></pre>
+<p>We can look at the summary for the model and compare observed and expected number of groups by beaufort chunk:</p>
 <pre class="r"><code>summary(dsm_avg_group)</code></pre>
 <pre><code>## 
 ## Family: Tweedie(p=1.139) 
@@ -528,10 +555,11 @@ summary(Plane_ds)</code></pre>
 ## 
 ## R-sq.(adj) =   0.13   Deviance explained = 31.2%
 ## -REML = 460.61  Scale est. = 4.6913    n = 3794</code></pre>
-<pre class="r"><code>obs_exp(dsm_avg_group, &quot;beaufort&quot;, c(0, 1, 2, 3, 4, 5))</code></pre>
+<pre class="r"><code>obs_exp(dsm_avg_group, &quot;beaufort&quot;, 0:5)</code></pre>
 <pre><code>##             (0,1]    (1,2]    (2,3]    (3,4]    (4,5]       &lt;NA&gt;
 ## Observed  2.00000 56.91892 136.9189 79.13514 28.10811 0.00000000
 ## Expected 12.06823 46.60768 126.6094 80.35205 37.83926 0.01776553</code></pre>
+<p>We can propagate the variance from the detection functions through to predictions over the study area from the DSM:</p>
 <pre class="r"><code>vp_b &lt;- dsm_varprop(dsm_avg_group, predgrid)
 vp_b</code></pre>
 <pre><code>## Summary of uncertainty in a density surface model calculated
@@ -565,23 +593,23 @@ vp_b</code></pre>
 ## Point estimate                 : 3454.167 
 ## Standard error                 : 572.4052 
 ## Coefficient of variation       : 0.1657</code></pre>
-<p>correct for group size:</p>
-<p>Make predictions using predict function mutiply each prediction by estimate of average group size</p>
-<pre class="r"><code>predict.fun &lt;- predict(dsm_avg_group, newdata=predgrid,
+<p>We need to correct the estimate for group size. We can use the <code>predict</code> function to get the estimate (rather than using <code>dsm_varprop</code>):</p>
+<pre class="r"><code>predN &lt;- predict(dsm_avg_group, newdata=predgrid,
                        off.set=predgrid$off.set)
 
-sum(predict.fun*1.38)</code></pre>
+sum(predN*1.38)</code></pre>
 <pre><code>## [1] 4708.251</code></pre>
-<p>same model but using observed rather than estimated group sizes</p>
-<pre class="r"><code>dsm_obs_group &lt;- dsm(count ~ s(DIST125,bs=&quot;ts&quot;, k=5) +
-                             s(DEPTH,bs=&quot;ts&quot;, k=5) +
-                             s(DIST2SHORE,bs=&quot;ts&quot;, k=5) +
-                             s(SST,bs=&quot;ts&quot;, k=5),
+<p>We can now fit same model but using observed rather than estimated group sizes</p>
+<pre class="r"><code>dsm_obs_group &lt;- dsm(count ~ s(DIST125, bs=&quot;ts&quot;, k=5) +
+                             s(DEPTH, bs=&quot;ts&quot;, k=5) +
+                             s(DIST2SHORE, bs=&quot;ts&quot;, k=5) +
+                             s(SST, bs=&quot;ts&quot;, k=5),
                      ddf.obj=list(Ship_mrds, Plane_ds),
                      family=tw(link=&quot;log&quot;), method=&quot;REML&quot;,
                      availability=avail,
                      segment.data=fin_segs,
                      observation.data=fin_obs)</code></pre>
+<p>The only difference between this model and <code>dsm_avg_group</code> is now we don’t set <code>group=TRUE</code>. We can see that we get pretty similar results:</p>
 <pre class="r"><code>summary(dsm_obs_group)</code></pre>
 <pre><code>## 
 ## Family: Tweedie(p=1.241) 
@@ -609,15 +637,12 @@ sum(predict.fun*1.38)</code></pre>
 ## 
 ## R-sq.(adj) =  0.125   Deviance explained = 35.4%
 ## -REML = 491.14  Scale est. = 8.1426    n = 3794</code></pre>
-<pre class="r"><code>obs_exp(dsm_obs_group, &quot;beaufort&quot;, c(0, 1, 2, 3, 4, 5))</code></pre>
+<pre class="r"><code>obs_exp(dsm_obs_group, &quot;beaufort&quot;, 0:5)</code></pre>
 <pre><code>##             (0,1]    (1,2]    (2,3]     (3,4]    (4,5]       &lt;NA&gt;
 ## Observed  4.00000 89.02703 196.9189  89.83784 34.10811 0.00000000
 ## Expected 16.77055 59.55306 171.6522 106.16295 51.03882 0.01953501</code></pre>
-<p>better?</p>
-<pre class="r"><code>sum(predict(dsm_obs_group, newdata=predgrid, off.set=predgrid$off.set))</code></pre>
-<pre><code>## [1] 4543.23</code></pre>
-<pre class="r"><code># propagate uncertainty
-vp &lt;- dsm_varprop(dsm_obs_group, predgrid)
+<p>But we now don’t need to multiply by the average group size:</p>
+<pre class="r"><code>vp &lt;- dsm_varprop(dsm_obs_group, predgrid)
 vp</code></pre>
 <pre><code>## Summary of uncertainty in a density surface model calculated
 ##  by variance propagation.
@@ -650,6 +675,7 @@ vp</code></pre>
 ## Point estimate                 : 4541.078 
 ## Standard error                 : 800.1551 
 ## Coefficient of variation       : 0.1762</code></pre>
+</div>
 </div>
 </div>
 

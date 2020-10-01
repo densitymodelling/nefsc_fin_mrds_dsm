@@ -5,8 +5,8 @@
 
 # Load data files
 # Sightings data formatted for mrds
-mrds_Sightings <- read.csv("Fin_Sightings_mrds_for_dsm.csv")
-Fin_Whale_Data <- read.csv("Final_Fin_Whale_Data_for_dsm.csv")
+mrds_Sightings <- read.csv("data/Fin_Sightings_mrds_for_dsm.csv")
+Fin_Whale_Data <- read.csv("data/Final_Fin_Whale_Data_for_dsm.csv")
 
 # rescale distances
 mrds_Sightings$distance <- mrds_Sightings$distance/1000
@@ -67,7 +67,7 @@ fin_obs$Species_Hab_Num <- NULL
 
 
 # Import data set with values for all grid cells
-All_Covs <- read.csv("Mean_Summer_Covariates_By_Grid_Cell_Final.csv")
+All_Covs <- read.csv("data/Mean_Summer_Covariates_By_Grid_Cell_Final.csv")
 All_Covs <- subset(All_Covs, DIST125!='NA' & DEPTH!='NA'
                    & DIST2SHORE!='NA' & SST!='NA')
 predgrid <- All_Covs[, c("Area", "DIST125", "DEPTH",

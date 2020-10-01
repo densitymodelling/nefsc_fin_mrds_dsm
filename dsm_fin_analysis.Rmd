@@ -4,7 +4,27 @@ author: David L Miller and Doug Sigourney
 
 ---
 
-data provided by Doug Sigourney, NOAA NEFSC. based on data from the paper at https://peerj.com/articles/8226/
+# Introduction
+
+These data consist of observations of fin whales as part of NOAA's [Atlantic Marine Assessment Program for Protected Species](https://www.fisheries.noaa.gov/new-england-mid-atlantic/population-assessments/atlantic-marine-assessment-program-protected).
+
+The analysis here is based on that in *Developing and assessing a density surface model in a Bayesian hierarchical framework with a focus on uncertainty: insights from simulations and an application to fin whales (Balaenoptera physalus)* [available at PeerJ](https://peerj.com/articles/8226/).
+
+# Elements of this analysis
+
+- 2 detection functions
+  - Aerial survey: multiple covariate distance sampling (MCDS)
+  - Shipboard survey: double observer survey (mark-recapture distance sampling; MRDS)
+- Availability correction for aerial surveys (0.37)
+- Density surface model combining these two sources
+- Comparison of using average group size vs. observed group size
+
+Note that in the original analysis of these data a fully Bayesian model was used, incorporating uncertainty in group size and availability. Here we do not address these sources of uncertainty. The most appropriate comparison is to results provided in their [Table 3](https://peerj.com/articles/8226/#table-3) where availability was treated as constant (since uncertainty in mean group size contributed a negligible amount to uncertainty). This estimate is 4345 fin whales with a CV=0.21.
+
+
+# Preliminaries
+
+Data has already been processed and is stored in `findata.RData`.
 
 ```{r data-and-packages}
 library(mrds)
@@ -12,10 +32,23 @@ library(dsm)
 load("findata.RData")
 ```
 
+Note that `dsm` package version 2.3.1.9007 (development version from [github](https://github.com/distancedevelopment/dsm)) is required for multiple detection function functionality.
+
+## Model fitting
+
+We now fit the detection functions, followed by the density surface model. Note that we'd normally do full model selection at each stage, but since we are simply duplicating the analysis from the paper we just use the models selected there.
+
+Note that the data used to fit the detection functions (`ship_detections` and `plane_detections`) includes detections of fin whales, sei whales and detections that could only be classified to "fin or sei whale". This improves the fit of the detection functions as more detections are included. For fitting the density surface model, we only want to include detections of fin whales (since that is the species we want an abundance estimate for). We can exclude the non-fin whale observations by including only the `object` IDs that we want in the observation frame `fin_obs`. See the data setup script for how this was done.
 
 
+We first setup the truncations for each detection function model:
 
-## Availability
+```{r truncation}
+w_ship <- 6
+w_plane <- 0.9
+```
+
+and then need to set up a vector of availabilities for the DSM. This just needs to be the same length as the observation data.
 
 ```{r availability}
 a_plane <- 0.37
@@ -24,15 +57,12 @@ a_ship <- 1
 avail <- c(a_ship, a_plane)[fin_obs$survey]
 ```
 
-```{r truncation}
-w_ship <- 6
-w_plane <- 0.9
-```
 
-
-## Model fitting
 
 ### Ship surveys - MRDS
+
+We can fit an independent observer model to the double observer data for the ship.
+
 ```{r ship-mrds}
 Ship_mrds <- ddf(dsmodel = ~mcds(key = "hr", formula = ~beaufort + SUBJ_WAVG),
                  mrmodel = ~glm(~distance),
@@ -44,6 +74,8 @@ summary(Ship_mrds)
 
 ### Aerial surveys - MCDS
 
+The aerial survey is a regular multiple covariate detection function:
+
 ```{r plane-mcds}
 Plane_ds <- ddf(dsmodel = ~mcds(key = "hr", formula = ~beaufort),
                 data = plane_detections, meta.data = list(width = w_plane))
@@ -53,13 +85,16 @@ summary(Plane_ds)
 
 ### Density surface model
 
-this is as in Sigourney et al, setting group sizes to be 1 then inflating with average group size later
+
+In Sigourney et al. (2020) group sizes were to be 1 for fitting. Predictions were then inflated by multiplying by the average group size (1.38), as is often done with large whales with small groups sizes with little variation. We specify this by setting `group=TRUE`.
+
+We can then fit the model using the below code. Note a list of detection function objects is provided to `ddf.obj`, their ordering matters and corresponds to the `ddfobj` column in the segment data (`fin_segs`).
 
 ```{r dsm-avg-group}
-dsm_avg_group <- dsm(count ~ s(DIST125,bs="ts", k=5) +
-                             s(DEPTH,bs="ts", k=5) +
-                             s(DIST2SHORE,bs="ts", k=5) +
-                             s(SST,bs="ts", k=5),
+dsm_avg_group <- dsm(count ~ s(DIST125, bs="ts", k=5) +
+                             s(DEPTH, bs="ts", k=5) +
+                             s(DIST2SHORE, bs="ts", k=5) +
+                             s(SST, bs="ts", k=5),
                      ddf.obj=list(Ship_mrds, Plane_ds),
                      family=tw(link="log"), method="REML",
                      segment.data=fin_segs, group=TRUE,
@@ -67,36 +102,37 @@ dsm_avg_group <- dsm(count ~ s(DIST125,bs="ts", k=5) +
                      observation.data=fin_obs)
 ```
 
+We can look at the summary for the model and compare observed and expected number of groups by beaufort chunk:
+
 ```{r dsm-avg-group-checking}
 summary(dsm_avg_group)
-obs_exp(dsm_avg_group, "beaufort", c(0, 1, 2, 3, 4, 5))
+obs_exp(dsm_avg_group, "beaufort", 0:5)
 ```
+
+We can propagate the variance from the detection functions through to predictions over the study area from the DSM:
 
 ```{r dsm-avg-group-var}
 vp_b <- dsm_varprop(dsm_avg_group, predgrid)
 vp_b
 ```
 
-correct for group size:
+We need to correct the estimate for group size. We can use the `predict` function to get the estimate (rather than using `dsm_varprop`):
 
-Make predictions using predict function
-mutiply each prediction by estimate of average group size
 ```{r dsm-avg-group-predict}
-predict.fun <- predict(dsm_avg_group, newdata=predgrid,
+predN <- predict(dsm_avg_group, newdata=predgrid,
                        off.set=predgrid$off.set)
 
-sum(predict.fun*1.38)
+sum(predN*1.38)
 ```
 
 
-
-same model but using observed rather than estimated group sizes
+We can now fit same model but using observed rather than estimated group sizes
 
 ```{r dsm-obs-group}
-dsm_obs_group <- dsm(count ~ s(DIST125,bs="ts", k=5) +
-                             s(DEPTH,bs="ts", k=5) +
-                             s(DIST2SHORE,bs="ts", k=5) +
-                             s(SST,bs="ts", k=5),
+dsm_obs_group <- dsm(count ~ s(DIST125, bs="ts", k=5) +
+                             s(DEPTH, bs="ts", k=5) +
+                             s(DIST2SHORE, bs="ts", k=5) +
+                             s(SST, bs="ts", k=5),
                      ddf.obj=list(Ship_mrds, Plane_ds),
                      family=tw(link="log"), method="REML",
                      availability=avail,
@@ -104,18 +140,16 @@ dsm_obs_group <- dsm(count ~ s(DIST125,bs="ts", k=5) +
                      observation.data=fin_obs)
 ```
 
+The only difference between this model and `dsm_avg_group` is now we don't set `group=TRUE`. We can see that we get pretty similar results:
+
 ```{r dsm-obs-group-checking}
 summary(dsm_obs_group)
-obs_exp(dsm_obs_group, "beaufort", c(0, 1, 2, 3, 4, 5))
+obs_exp(dsm_obs_group, "beaufort", 0:5)
 ```
 
-better?
-```{r dsm-obs-group-pred}
-sum(predict(dsm_obs_group, newdata=predgrid, off.set=predgrid$off.set))
-```
+But we now don't need to multiply by the average group size:
 
 ```{r dsm-obs-group-var}
-# propagate uncertainty
 vp <- dsm_varprop(dsm_obs_group, predgrid)
 vp
 ```
