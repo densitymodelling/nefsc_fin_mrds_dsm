@@ -55,7 +55,7 @@ Plane.ds <- ddf(dsmodel = ~mcds(key = "hr", formula = ~beaufort),
                 data = All_Dat_Plane_1, meta.data = list(width = W_2))
 summary(Plane.ds)
 
-
+# might need remove sei, fin/sei observations
 
 # Fit DSM
 # this is as in Sigourney et al, setting group sizes to be 1
