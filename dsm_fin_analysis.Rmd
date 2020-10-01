@@ -1,0 +1,122 @@
+---
+title: DSM analysis of fin whale sightings
+author: David L Miller and Doug Sigourney
+
+---
+
+data provided by Doug Sigourney, NOAA NEFSC. based on data from the paper at https://peerj.com/articles/8226/
+
+```{r data-and-packages}
+library(mrds)
+library(dsm)
+load("findata.RData")
+```
+
+
+
+
+## Availability
+
+```{r availability}
+a_plane <- 0.37
+a_ship <- 1
+
+avail <- c(a_ship, a_plane)[fin_obs$survey]
+```
+
+```{r truncation}
+w_ship <- 6
+w_plane <- 0.9
+```
+
+
+## Model fitting
+
+### Ship surveys - MRDS
+```{r ship-mrds}
+Ship_mrds <- ddf(dsmodel = ~mcds(key = "hr", formula = ~beaufort + SUBJ_WAVG),
+                 mrmodel = ~glm(~distance),
+                 data = ship_detections, method = "io",
+                 meta.data = list(width = w_ship))
+summary(Ship_mrds)
+```
+
+
+### Aerial surveys - MCDS
+
+```{r plane-mcds}
+Plane_ds <- ddf(dsmodel = ~mcds(key = "hr", formula = ~beaufort),
+                data = plane_detections, meta.data = list(width = w_plane))
+summary(Plane_ds)
+```
+
+
+### Density surface model
+
+this is as in Sigourney et al, setting group sizes to be 1 then inflating with average group size later
+
+```{r dsm-avg-group}
+dsm_avg_group <- dsm(count ~ s(DIST125,bs="ts", k=5) +
+                             s(DEPTH,bs="ts", k=5) +
+                             s(DIST2SHORE,bs="ts", k=5) +
+                             s(SST,bs="ts", k=5),
+                     ddf.obj=list(Ship_mrds, Plane_ds),
+                     family=tw(link="log"), method="REML",
+                     segment.data=fin_segs, group=TRUE,
+                     availability=avail,
+                     observation.data=fin_obs)
+```
+
+```{r dsm-avg-group-checking}
+summary(dsm_avg_group)
+obs_exp(dsm_avg_group, "beaufort", c(0, 1, 2, 3, 4, 5))
+```
+
+```{r dsm-avg-group-var}
+vp_b <- dsm_varprop(dsm_avg_group, predgrid)
+vp_b
+```
+
+correct for group size:
+
+Make predictions using predict function
+mutiply each prediction by estimate of average group size
+```{r dsm-avg-group-predict}
+predict.fun <- predict(dsm_avg_group, newdata=predgrid,
+                       off.set=predgrid$off.set)
+
+sum(predict.fun*1.38)
+```
+
+
+
+same model but using observed rather than estimated group sizes
+
+```{r dsm-obs-group}
+dsm_obs_group <- dsm(count ~ s(DIST125,bs="ts", k=5) +
+                             s(DEPTH,bs="ts", k=5) +
+                             s(DIST2SHORE,bs="ts", k=5) +
+                             s(SST,bs="ts", k=5),
+                     ddf.obj=list(Ship_mrds, Plane_ds),
+                     family=tw(link="log"), method="REML",
+                     availability=avail,
+                     segment.data=fin_segs,
+                     observation.data=fin_obs)
+```
+
+```{r dsm-obs-group-checking}
+summary(dsm_obs_group)
+obs_exp(dsm_obs_group, "beaufort", c(0, 1, 2, 3, 4, 5))
+```
+
+better?
+```{r dsm-obs-group-pred}
+sum(predict(dsm_obs_group, newdata=predgrid, off.set=predgrid$off.set))
+```
+
+```{r dsm-obs-group-var}
+# propagate uncertainty
+vp <- dsm_varprop(dsm_obs_group, predgrid)
+vp
+```
+
