@@ -27,6 +27,8 @@ Note that in the original analysis of these data a fully Bayesian model was used
 Data has already been processed and is stored in `findata.RData`.
 
 ```{r data-and-packages}
+library(ggplot2)
+library(patchwork)
 library(mrds)
 library(dsm)
 load("findata.RData")
@@ -102,7 +104,7 @@ dsm_avg_group <- dsm(count ~ s(DIST125, bs="ts", k=5) +
                      observation.data=fin_obs)
 ```
 
-We can look at the summary for the model and compare observed and expected number of groups by beaufort chunk:
+We can look at the summary for the model and compare observed and expected number of groups by Beaufort chunk:
 
 ```{r dsm-avg-group-checking}
 summary(dsm_avg_group)
@@ -154,3 +156,54 @@ vp <- dsm_varprop(dsm_obs_group, predgrid)
 vp
 ```
 
+We can plot the results too:
+
+```{r pred-varprop-plot}
+predgrid$pred <- vp$pred[,1]/10000^2
+predgrid$se <- vp$se
+predgrid$CV <- vp$se/vp$pred[,1]
+this_theme <- theme(legend.position="bottom",
+                    axis.title.y=element_blank(),
+                    axis.text.y=element_blank(),
+                    axis.title.x=element_blank(),
+                    axis.text.x=element_blank())
+
+# get scale as in paper
+mind <- min(predgrid$pred, na.rm=TRUE)
+maxd <- max(predgrid$pred, na.rm=TRUE)
+
+#then run the code to make the geometrical breaks
+n <- 20
+k <- (maxd/mind)^(1/n)
+brks <- c(mind,(mind*(k^seq(n))))
+brks[1]<-0
+brks <- brks[-2]
+
+predgrid$pred_d <- cut(predgrid$pred, brks)
+
+predplot <- ggplot(predgrid) +
+  geom_tile(aes(x=x, y=y, fill=pred_d, width=10000, height=10000)) +
+  theme_minimal() +
+  scale_fill_viridis_d() +
+  this_theme +
+  coord_equal()
+
+#seplot <- ggplot(predgrid) +
+#  geom_tile(aes(x=x, y=y, fill=se, width=10000, height=10000)) +
+#  theme_minimal() +
+#  scale_fill_viridis_c() +
+#  this_theme +
+#  coord_equal()
+
+cvbrks <- c(0, 0.35, .5, 1, Inf)
+predgrid$CV_d <- cut(predgrid$CV, cvbrks)
+CVplot <- ggplot(predgrid) +
+  geom_tile(aes(x=x, y=y, fill=CV_d, width=10000, height=10000)) +
+  theme_minimal() +
+  scale_fill_viridis_d() +
+  this_theme +
+  coord_equal()
+
+#predplot + seplot + CVplot
+predplot  + CVplot
+```

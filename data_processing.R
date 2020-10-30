@@ -71,10 +71,20 @@ All_Covs <- read.csv("data/Mean_Summer_Covariates_By_Grid_Cell_Final.csv")
 All_Covs <- subset(All_Covs, DIST125!='NA' & DEPTH!='NA'
                    & DIST2SHORE!='NA' & SST!='NA')
 predgrid <- All_Covs[, c("Area", "DIST125", "DEPTH",
-                         "DIST2SHORE", "SST")]
+                         "DIST2SHORE", "SST", "LAT", "LON")]
 predgrid$off.set <- predgrid$Area
 predgrid$Area <- NULL
 
+
+# project lat/long for plotting
+library(sf)
+proj <- "+proj=omerc +lat_0=35 +lonc=-75 +alpha=40 +k=0.9996 +x_0=0 +y_0=0 +gamma=40 +datum=NAD83 +units=m +no_defs +ellps=GRS80 +towgs84=0,0,0"
+coords <- st_sfc(st_multipoint(as.matrix(predgrid[,c("LON", "LAT")])))
+st_crs(coords) <- 4326
+coords <- st_coordinates(st_transform(coords,
+                                      crs=proj))
+predgrid$x <- coords[,1]
+predgrid$y <- coords[,2]
 
 # save all data
 save(ship_detections, plane_detections, fin_obs, fin_segs, predgrid,
