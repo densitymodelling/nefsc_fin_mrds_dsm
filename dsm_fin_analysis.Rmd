@@ -156,30 +156,64 @@ vp <- dsm_varprop(dsm_obs_group, predgrid)
 vp
 ```
 
-We can plot the results too:
 
-```{r pred-varprop-plot}
-predgrid$pred <- vp$pred[,1]/10000^2
-predgrid$se <- vp$se
-predgrid$CV <- vp$se/vp$pred[,1]
+Preferable to use a Metropolis-Hastings sampler to get a posterior for the model. Using code from [dill/GAMsampling](https://github.com/dill/GAMsampling):
+
+```{r mh-sampler}
+# extra code
+source("gam.mh_fix.r")
+source("ttools.R")
+source("likelihood_tools.R")
+
+# do the sampling
+# minor fiddling with the parameters here necessary
+bs <- gam.mh(vp$refit, burn=2000, t.df=25, rw.scale=0.2, thin=10)
+```
+
+Now we need to construct a prediction matrix:
+
+```{r predmat}
+# extra columns for the varprop bit of the model
+predgrid$XX <- matrix(0, nrow=nrow(predgrid),
+                      ncol=length(coef(vp$refit))-length(coef(dsm_obs_group)))
+# create the matrix that maps model coefficients to the linear predictor
+Xp <- predict(vp$refit, predgrid, type="lpmatrix")
+# generate predictions
+preds_mh <- predgrid$off.set*exp(Xp%*%t(bs$bs))
+```
+
+Now calculate our posterior statistics:
+
+```{r post-stats}
+predgrid$pred <- rowMeans(preds_mh)
+predgrid$CV <- apply(preds_mh, 1, sd)/rowMeans(preds_mh)
+```
+
+Finally, plotting these:
+
+```{r plotit}
 this_theme <- theme(legend.position="bottom",
                     axis.title.y=element_blank(),
                     axis.text.y=element_blank(),
                     axis.title.x=element_blank(),
                     axis.text.x=element_blank())
 
-# get scale as in paper
+
+# get scale for predictions as in paper
 mind <- min(predgrid$pred, na.rm=TRUE)
 maxd <- max(predgrid$pred, na.rm=TRUE)
-
-#then run the code to make the geometrical breaks
+# geometrical breaks
 n <- 20
 k <- (maxd/mind)^(1/n)
 brks <- c(mind,(mind*(k^seq(n))))
 brks[1]<-0
 brks <- brks[-2]
-
 predgrid$pred_d <- cut(predgrid$pred, brks)
+
+# and the scale for the CV
+cvbrks <- c(0, 0.35, .5, 1, Inf)
+predgrid$CV_d <- cut(predgrid$CV, cvbrks)
+
 
 predplot <- ggplot(predgrid) +
   geom_tile(aes(x=x, y=y, fill=pred_d, width=10000, height=10000)) +
@@ -188,15 +222,6 @@ predplot <- ggplot(predgrid) +
   this_theme +
   coord_equal()
 
-#seplot <- ggplot(predgrid) +
-#  geom_tile(aes(x=x, y=y, fill=se, width=10000, height=10000)) +
-#  theme_minimal() +
-#  scale_fill_viridis_c() +
-#  this_theme +
-#  coord_equal()
-
-cvbrks <- c(0, 0.35, .5, 1, Inf)
-predgrid$CV_d <- cut(predgrid$CV, cvbrks)
 CVplot <- ggplot(predgrid) +
   geom_tile(aes(x=x, y=y, fill=CV_d, width=10000, height=10000)) +
   theme_minimal() +
@@ -204,6 +229,7 @@ CVplot <- ggplot(predgrid) +
   this_theme +
   coord_equal()
 
-#predplot + seplot + CVplot
-predplot  + CVplot
+# print the plots side-by-side
+predplot + CVplot
 ```
+
