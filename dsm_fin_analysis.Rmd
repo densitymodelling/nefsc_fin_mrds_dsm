@@ -124,6 +124,7 @@ We need to correct the estimate for group size. We can use the `predict` functio
 predN <- predict(dsm_avg_group, newdata=predgrid,
                        off.set=predgrid$off.set)
 
+# abundance estimate
 sum(predN*1.38)
 ```
 
@@ -182,54 +183,95 @@ Xp <- predict(vp$refit, predgrid, type="lpmatrix")
 preds_mh <- predgrid$off.set*exp(Xp%*%t(bs$bs))
 ```
 
-Now calculate our posterior statistics:
+Now calculate our posterior statistics per grid cell:
 
 ```{r post-stats}
-predgrid$pred <- rowMeans(preds_mh)
+# was results as density in animals/km^2
+preds_mh <- preds_mh/10^2
+predgrid$Density <- rowMeans(preds_mh)
 predgrid$CV <- apply(preds_mh, 1, sd)/rowMeans(preds_mh)
 ```
 
 Finally, plotting these:
 
-```{r plotit}
+```{r plotit, fig.width=12}
 this_theme <- theme(legend.position="bottom",
                     axis.title.y=element_blank(),
                     axis.text.y=element_blank(),
                     axis.title.x=element_blank(),
-                    axis.text.x=element_blank())
+                    axis.text.x=element_blank(),
+                    legend.text=element_text(size=8))
 
 
 # get scale for predictions as in paper
-mind <- min(predgrid$pred, na.rm=TRUE)
-maxd <- max(predgrid$pred, na.rm=TRUE)
+mind <- 0.000017
+maxd <- 0.048
 # geometrical breaks
-n <- 20
+n <- 10
 k <- (maxd/mind)^(1/n)
-brks <- c(mind,(mind*(k^seq(n))))
-brks[1]<-0
-brks <- brks[-2]
-predgrid$pred_d <- cut(predgrid$pred, brks)
+brks <- c(0, mind, (mind*(k^seq(n))), max(predgrid$Density))
+predgrid$pred_d <- cut(predgrid$Density, brks)
+# nicer break labels (fiddly!)
+levels(predgrid$pred_d) <- sub(",", " - ", levels(predgrid$pred_d))
+levels(predgrid$pred_d) <- sub("\\(", "", levels(predgrid$pred_d))
+levels(predgrid$pred_d) <- sub("]", "", levels(predgrid$pred_d))
+levels(predgrid$pred_d)[1] <- "<0.000017"
+levels(predgrid$pred_d)[length(levels(predgrid$pred_d))] <- ">0.048"
+levels(predgrid$pred_d) <- unlist(lapply(levels(predgrid$pred_d), function(x){
+  if(grepl("e", x)){
+    x <- as.character(as.numeric(strsplit(x, " - ")[[1]]))
+    x <- paste0(x[1], " - ", x[2])
+  }
+  x
+}))
 
-# and the scale for the CV
-cvbrks <- c(0, 0.35, .5, 1, Inf)
+# and the breaks for the CV (as in paper)
+cvbrks <- c(0, 0.35, .5, 1, ceiling(max(predgrid$CV)))
 predgrid$CV_d <- cut(predgrid$CV, cvbrks)
+# nicer break labels
+levels(predgrid$CV_d) <- sub(",", " - ", levels(predgrid$CV_d))
+levels(predgrid$CV_d) <- sub("\\(", "", levels(predgrid$CV_d))
+levels(predgrid$CV_d) <- sub("]", "", levels(predgrid$CV_d))
+levels(predgrid$CV_d)[4] <- ">1"
 
+# land outline
+library(rnaturalearth)
+library(rnaturalearthdata)
+library(sf)
+na <- ne_countries(continent="North America", returnclass="sf", scale=50)
+na <- st_transform(na, "+proj=omerc +lat_0=35 +lonc=-75 +alpha=40 +k=0.9996 +x_0=0 +y_0=0 +gamma=40 +datum=NAD83 +units=m +no_defs +ellps=GRS80 +towgs84=0,0,0") 
 
 predplot <- ggplot(predgrid) +
   geom_tile(aes(x=x, y=y, fill=pred_d, width=10000, height=10000)) +
+  geom_sf(data=na) +
   theme_minimal() +
   scale_fill_viridis_d() +
+  labs(fill="Density") +
   this_theme +
-  coord_equal()
+  coord_sf(xlim=range(predgrid$x), ylim=range(predgrid$y), expand=FALSE)
 
 CVplot <- ggplot(predgrid) +
   geom_tile(aes(x=x, y=y, fill=CV_d, width=10000, height=10000)) +
+  geom_sf(data=na) +
   theme_minimal() +
   scale_fill_viridis_d() +
+  labs(fill="CV") +
   this_theme +
-  coord_equal()
+  coord_sf(xlim=range(predgrid$x), ylim=range(predgrid$y), expand=FALSE)
 
 # print the plots side-by-side
 predplot + CVplot
 ```
 
+We can also calculate an overall summary for comparison:
+
+```{r nhat-comp}
+# abundance estimate
+sum(vp$pred)
+# standard error
+sqrt(var(colSums(preds_mh)))
+# coefficient of variation
+sqrt(var(colSums(preds_mh)))/(sum(vp$pred)/10^2)
+```
+
+Although we don't have an exact comparison from Sigourney et al. (2020), the authors make estimates fixing the group size to observed values ($\hat{N}$=4013; CV=0.31) and fixing the availability to its mean as we do here ($\hat{N}$=4345; CV=0.21) while leaving the rest of the model as-is.
