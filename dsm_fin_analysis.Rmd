@@ -242,19 +242,21 @@ na <- ne_countries(continent="North America", returnclass="sf", scale=50)
 na <- st_transform(na, "+proj=omerc +lat_0=35 +lonc=-75 +alpha=40 +k=0.9996 +x_0=0 +y_0=0 +gamma=40 +datum=NAD83 +units=m +no_defs +ellps=GRS80 +towgs84=0,0,0") 
 
 predplot <- ggplot(predgrid) +
-  geom_tile(aes(x=x, y=y, fill=pred_d, width=10000, height=10000)) +
-  geom_sf(data=na) +
+  geom_tile(aes(x=x, y=y, fill=pred_d, colour=pred_d, width=10000, height=10000)) +
+  geom_sf(data=na, colour="grey80", fill="grey80")+
   theme_minimal() +
   scale_fill_viridis_d() +
+  scale_colour_viridis_d(guide=FALSE) +
   labs(fill="Density") +
   this_theme +
   coord_sf(xlim=range(predgrid$x), ylim=range(predgrid$y), expand=FALSE)
 
 CVplot <- ggplot(predgrid) +
-  geom_tile(aes(x=x, y=y, fill=CV_d, width=10000, height=10000)) +
-  geom_sf(data=na) +
+  geom_tile(aes(x=x, y=y, fill=CV_d, colour=CV_d, width=10000, height=10000)) +
+  geom_sf(data=na, colour="grey80", fill="grey80")+
   theme_minimal() +
   scale_fill_viridis_d() +
+  scale_colour_viridis_d(guide=FALSE) +
   labs(fill="CV") +
   this_theme +
   coord_sf(xlim=range(predgrid$x), ylim=range(predgrid$y), expand=FALSE)
