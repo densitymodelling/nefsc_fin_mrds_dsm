@@ -84,8 +84,10 @@ fin_obs$Species_Hab_Num <- NULL
 fin_obs <- fin_obs[!duplicated(fin_obs$object), ]
 fin_obs$ddfobj <- fin_obs$survey
 ## only get observations within truncation
-#fin_obs <- subset(fin_obs, (ddfobj == 1 & distance < w_ship) |
-#                           (ddfobj == 2 & distance < w_plane))
+# note this is different from what is in the Sigourney et al
+# supplementary materials (but this is being corrected!)
+fin_obs <- subset(fin_obs, (ddfobj == 1 & distance < w_ship) |
+                           (ddfobj == 2 & distance < w_plane))
 
 # select only the columns we want
 fin_obs <- fin_obs[, c("object", "Sample.Label", "ddfobj", "size", "distance")]
