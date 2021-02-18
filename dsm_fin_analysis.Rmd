@@ -17,13 +17,10 @@ The analysis here is based on that in *Developing and assessing a density surfac
   - Shipboard survey: double observer survey (mark-recapture distance sampling; MRDS)
 - Density surface model combining these two sources
 - Observations of fin, sei and fin/sei uncertain species identifications were used to fit the detection function, but only certain fin detections were then used in the density surface model.
-- Availability correction for aerial surveys (0.37)
-- Comparison of using average group size vs. observed group size
-
+- Availability correction for aerial surveys (0.374, CV=0.34)
+- Comparison of using average group size versus observed group size
 
 The analysis of these data in Sigourney et al., uses a fully Bayesian model, incorporating uncertainty in group size and availability. Here we do not address these sources of uncertainty. The most appropriate comparison is to results provided in their [Table 3](https://peerj.com/articles/8226/#table-3) where availability was treated as constant (since uncertainty in mean group size contributed a negligible amount to uncertainty). This estimate is 4345 fin whales with a CV=0.21 (further comparisons are provided at the end of this document).
-
-
 
 
 # Preliminaries
@@ -46,7 +43,6 @@ We now fit the detection functions, followed by the density surface model. Note 
 
 Data used to fit the detection functions (`ship_detections` and `plane_detections`) includes detections of fin whales, sei whales and detections that could only be classified to "fin or sei whale". This improves the fit of the detection functions as more detections are included. For fitting the density surface model, we only want to include detections of fin whales (since that is the species we want an abundance estimate for). We can exclude the non-fin whale observations by including only the `object` IDs that we want in the observation `data.frame` `fin_obs`. See the data setup script for how this was done.
 
-
 We first setup the truncations for each detection function model:
 
 ```{r truncation}
@@ -54,7 +50,7 @@ w_ship <- 6
 w_plane <- 0.9
 ```
 
-and then need to set up a vector of availabilities (taken from supplementary code from the paper) for the DSM. This just needs to be the same length as the segment data (if we have a count model). We have a slight misuse of arguments here as we include the $g(0)$ estimate for the plane (as computed from a different analysis) here as fixed to match what's in the paper. The estimate of $g(0)=0.67$ is from Palka et al. (2017).
+and then need to set up a vector of availabilities (taken from supplementary code from the paper) for the DSM. This just needs to be the same length as the segment data (if we have a count model). We have a slight misuse of arguments here as we include the $g(0)$ estimate for the plane (as computed from a different analysis) here as fixed to match what's in the paper. The estimate of $g(0)=0.67$ (CV = 0.16) is from Palka et al. (2017).
 
 ```{r availability}
 a_plane <- 0.374*0.67
@@ -107,8 +103,6 @@ dsm_avg_group <- dsm(count ~ s(DIST125, bs="ts", k=5) +
                      availability=avail,
                      observation.data=fin_obs)
 ```
-
-We raise two warnings here due to the observation data including detections further away than the truncation distance. We don't generally recommend doing this, but we want to duplicate the analysis in Sigourney et al., so ignore the warnings.
 
 We can look at the summary for the model and compare observed and expected number of groups by Beaufort chunk:
 
@@ -191,9 +185,11 @@ preds_mh <- predgrid$off.set*exp(Xp%*%t(bs$bs))
 Now calculate our posterior statistics per grid cell:
 
 ```{r post-stats}
-# was results as density in animals/km^2
+# results as density in animals/km^2
 preds_mh <- preds_mh/10^2
+# mean estimate per cell from simulation
 predgrid$Density <- rowMeans(preds_mh)
+# per cell CV
 predgrid$CV <- apply(preds_mh, 1, sd)/rowMeans(preds_mh)
 ```
 
@@ -270,18 +266,31 @@ CVplot <- ggplot(predgrid) +
 predplot + CVplot
 ```
 
-We can also calculate an overall summary for comparison:
+We can also calculate an overall summary for comparison with results in the paper:
 
 ```{r nhat-comp}
 # abundance estimate
 sum(vp$pred)
 # standard error
 sqrt(var(colSums(preds_mh)))
-# coefficient of variation
-sqrt(var(colSums(preds_mh)))/(sum(vp$pred)/10^2)
+# coefficient of variation for DSM
+dsm_cv <- sqrt(var(colSums(preds_mh)))/(sum(vp$pred)/10^2)
+dsm_cv
 ```
 
-Although we don't have an exact comparison from Sigourney et al. (2020), the authors make estimates fixing the group size to observed values ($\hat{N}$=4013; CV=0.31) and fixing the availability to its mean as we do here ($\hat{N}$=4345; CV=0.21) while leaving the rest of the model as-is.
+We may also want to plot a histogram of the posterior distribution of abundance:
+
+```{r posterior-Nhat}
+hist(colSums(preds_mh), xlab="Abundance", prob=TRUE, main="Posterior sample of abundance")
+```
+
+Adding availability (0.34) and $g(0)$ CV (0.16) for the aerial survey to get a "total" CV:
+
+```{r add-palka-cv}
+sqrt(dsm_cv^2 + 0.34^2 + 0.16^2)
+```
+
+Although we cannot make an exact comparison from Sigourney et al. (2020), the authors make estimates fixing the group size to observed values ($\hat{N}$=4013; CV=0.31) and fixing the availability to its mean as we do here ($\hat{N}$=4345; CV=0.21) while leaving the rest of the model as-is. Here we assume that availability and $g(0)$ are independent and sum squared CVs to get the total CV which is higher than that from the original paper.
 
 
 # References

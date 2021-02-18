@@ -90,7 +90,7 @@ fin_obs <- subset(fin_obs, (ddfobj == 1 & distance < w_ship) |
                            (ddfobj == 2 & distance < w_plane))
 
 # select only the columns we want
-fin_obs <- fin_obs[, c("object", "Sample.Label", "ddfobj", "size", "distance")]
+fin_obs <- fin_obs[, c("object", "Sample.Label", "observer", "ddfobj", "size", "distance")]
 
 
 
