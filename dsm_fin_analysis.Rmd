@@ -28,14 +28,20 @@ The analysis of these data in Sigourney et al., uses a fully Bayesian model, inc
 Data has already been processed and is stored in `findata.RData`.
 
 ```{r data-and-packages}
-library(ggplot2)
+# modelling
 library(patchwork)
 library(mrds)
 library(dsm)
+# for plotting predictions
+library(ggplot2)
+library(rnaturalearth)
+library(rnaturalearthdata)
+library(sf)
+# data, pre-processed
 load("findata.RData")
 ```
 
-Note that `dsm` package version 2.3.1.9012 (development version from [github](https://github.com/distancedevelopment/dsm)) is required for multiple detection function functionality.
+Note that `dsm` package version 2.3.1 is required for multiple detection function functionality and `mgcv` version 1.8-34 is required for Metropolis-Hastings sampling.
 
 ## Model fitting
 
@@ -160,17 +166,16 @@ vp
 ```
 
 
-Rather than use the analytic approach, it might be preferable to use a Metropolis-Hastings sampler to get a posterior sample for the model. Using code from [dill/GAMsampling](https://github.com/dill/GAMsampling):
+Rather than use the analytic approach, it might be preferable to use a Metropolis-Hastings sampler to get a posterior sample for the model. We need to use tools from [this github repo](https://github.com/dill/GAMsampling) to ensure that the sampling works for the variance-propagated DSM.
 
 ```{r mh-sampler}
-# extra code
-source("gam.mh_fix.r")
-source("ttools.R")
+# load additional code
 source("likelihood_tools.R")
-
+source("gam.mh_fix.R")
+source("ttools.R")
 # do the sampling
 # minor fiddling with the parameters here necessary
-bs <- gam.mh(vp$refit, burn=2000, t.df=25, rw.scale=0.2, thin=10)
+bs <- gam.mh(vp$refit, burn=2000, thin=10)
 ```
 
 Now we need to construct a prediction matrix:
@@ -179,23 +184,23 @@ Now we need to construct a prediction matrix:
 # create the matrix that maps model coefficients to the linear predictor
 Xp <- predict(vp$refit, predgrid, type="lpmatrix")
 # generate predictions
-preds_mh <- predgrid$off.set*exp(Xp%*%t(bs$bs))
+preds_mh <- predgrid$off.set * exp(Xp %*% t(bs$bs))
 ```
 
 Now calculate our posterior statistics per grid cell:
 
 ```{r post-stats}
+# mean density estimate per cell from simulation
 # results as density in animals/km^2
-preds_mh <- preds_mh/10^2
-# mean estimate per cell from simulation
-predgrid$Density <- rowMeans(preds_mh)
+predgrid$Density <- rowMeans(preds_mh/10^2)
 # per cell CV
-predgrid$CV <- apply(preds_mh, 1, sd)/rowMeans(preds_mh)
+predgrid$CV <- apply(preds_mh/10^2, 1, sd)/predgrid$Density
 ```
 
 Finally, plotting these:
 
 ```{r plotit, fig.width=12}
+# plot theme
 this_theme <- theme(legend.position="bottom",
                     axis.title.y=element_blank(),
                     axis.text.y=element_blank(),
@@ -204,7 +209,7 @@ this_theme <- theme(legend.position="bottom",
                     legend.text=element_text(size=8))
 
 
-# get scale for predictions as in paper
+# get scale for predictions as in paper, thanks to Beth Josephson for this code
 mind <- 0.000017
 maxd <- 0.048
 # geometrical breaks
@@ -236,9 +241,6 @@ levels(predgrid$CV_d) <- sub("]", "", levels(predgrid$CV_d))
 levels(predgrid$CV_d)[4] <- ">1"
 
 # land outline
-library(rnaturalearth)
-library(rnaturalearthdata)
-library(sf)
 na <- ne_countries(continent="North America", returnclass="sf", scale=50)
 na <- st_transform(na, "+proj=omerc +lat_0=35 +lonc=-75 +alpha=40 +k=0.9996 +x_0=0 +y_0=0 +gamma=40 +datum=NAD83 +units=m +no_defs +ellps=GRS80 +towgs84=0,0,0") 
 
@@ -274,7 +276,7 @@ sum(vp$pred)
 # standard error
 sqrt(var(colSums(preds_mh)))
 # coefficient of variation for DSM
-dsm_cv <- sqrt(var(colSums(preds_mh)))/(sum(vp$pred)/10^2)
+dsm_cv <- sqrt(var(colSums(preds_mh)))/(sum(vp$pred))
 dsm_cv
 ```
 
