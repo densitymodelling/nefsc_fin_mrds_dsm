@@ -13,7 +13,7 @@ The analysis here is based on that in *Developing and assessing a density surfac
 # Elements of this analysis
 
 - 2 detection functions
-  - Aerial survey: multiple covariate distance sampling (MCDS)
+  - Aerial survey: multiple covariate distance sampling (MCDS) with fixed $g(0)$ correction from literature
   - Shipboard survey: double observer survey (mark-recapture distance sampling; MRDS)
 - Density surface model combining these two sources
 - Observations of fin, sei and fin/sei uncertain species identifications were used to fit the detection function, but only certain fin detections were then used in the density surface model.
